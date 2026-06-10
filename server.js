@@ -309,15 +309,31 @@ function normalizeDirection(val) {
 }
 
 app.get('/api/settings', (_req, res) => {
+  const s = readDB().settings;
+  // mask token — แสดงแค่ 6 ตัวท้าย ป้องกัน token หลุด
+  const masked = { ...s };
+  if (masked.telegramToken) {
+    masked.telegramToken = '••••••••' + masked.telegramToken.slice(-6);
+  }
+  res.json(masked);
+});
+
+// admin-only: ดู settings เต็ม (ต้องใส่ token)
+app.get('/admin/api/settings', adminAuth, (_req, res) => {
   res.json(readDB().settings);
 });
 
 app.post('/api/settings', (req, res) => {
   try {
     const db = readDB();
-    db.settings = { ...db.settings, ...req.body };
+    const updates = { ...req.body };
+    // ถ้า token ที่ส่งมาเป็น masked value ให้คงค่าเดิมไว้
+    if (updates.telegramToken && updates.telegramToken.startsWith('••••••••')) {
+      delete updates.telegramToken;
+    }
+    db.settings = { ...db.settings, ...updates };
     writeDB(db);
-    addLog('system', 'Settings updated', req.body);
+    addLog('system', 'Settings updated');
     startPriceLoop();
     res.json({ success: true });
   } catch (err) {
