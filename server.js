@@ -5,10 +5,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// DATA_DIR ใช้สำหรับ Railway Volume — ถ้าไม่ตั้งค่าจะใช้โฟลเดอร์โปรเจกต์
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_PATH = join(DATA_DIR, 'db.json');
 const PORT = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
 
 const app = express();
 app.use(cors());
@@ -19,9 +19,28 @@ app.use(express.static(join(__dirname, 'public')));
 function readDB() {
   return JSON.parse(readFileSync(DB_PATH, 'utf-8'));
 }
-
 function writeDB(data) {
   writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
+
+// --- In-Memory Log Buffer ---
+const logs = [];
+const MAX_LOGS = 1000;
+const sseClients = new Set();
+
+function addLog(type, message, data = null) {
+  const entry = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type,   // price | alert | error | push | telegram | system
+    message,
+    data,
+    ts: new Date().toISOString()
+  };
+  logs.unshift(entry);
+  if (logs.length > MAX_LOGS) logs.pop();
+  // broadcast to all SSE clients
+  const payload = `data: ${JSON.stringify(entry)}\n\n`;
+  sseClients.forEach(res => res.write(payload));
 }
 
 // --- Price Cache ---
@@ -30,14 +49,11 @@ let priceCache = {
   high: 0, low: 0, timestamp: new Date().toISOString(), source: 'Connecting...'
 };
 
-// --- Fetch Gold Price (SwissQuote public feed, no key) ---
+// --- Fetch Gold Price ---
 async function fetchGoldPrice() {
   const res = await fetch(
     'https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD',
-    {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(8000)
-    }
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
   );
   if (!res.ok) throw new Error(`SwissQuote HTTP ${res.status}`);
 
@@ -45,20 +61,15 @@ async function fetchGoldPrice() {
   const entry = json?.[0];
   if (!entry) throw new Error('No data from SwissQuote');
 
-  // bid/ask from Prime profile
   const profile = entry.spreadProfilePrices?.find(p => p.spreadProfile === 'Prime')
     ?? entry.spreadProfilePrices?.[0];
   if (!profile) throw new Error('No spread profile in SwissQuote response');
 
   const price = (profile.ask + profile.bid) / 2;
 
-  // keep a rolling open to calculate change
   if (!fetchGoldPrice._open) fetchGoldPrice._open = price;
   const open = fetchGoldPrice._open;
-  const change = price - open;
-  const changePercent = (change / open) * 100;
 
-  // reset open at server start once per day (simple heuristic)
   const now = new Date();
   if (!fetchGoldPrice._date || fetchGoldPrice._date !== now.toDateString()) {
     fetchGoldPrice._date = now.toDateString();
@@ -71,8 +82,8 @@ async function fetchGoldPrice() {
 
   return {
     price,
-    change,
-    changePercent,
+    change: price - open,
+    changePercent: ((price - open) / open) * 100,
     high: fetchGoldPrice._high,
     low:  fetchGoldPrice._low,
     timestamp: new Date(entry.ts ?? Date.now()).toISOString(),
@@ -124,6 +135,11 @@ async function checkAlerts(currentPrice) {
     db.history = [historyItem, ...(db.history || [])];
 
     const dir = alert.condition === 'above' ? 'สูงกว่า' : 'ต่ำกว่า';
+    addLog('alert',
+      `Alert triggered: ราคา${dir} $${alert.targetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })} | ราคาจริง $${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      { alertId: alert.id, condition: alert.condition, target: alert.targetPrice, actual: currentPrice }
+    );
+
     const msg =
       `🔔 <b>Gold Price Alert!</b>\n\n` +
       `ราคาทองคำ<b>${dir}</b> $${alert.targetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
@@ -132,7 +148,11 @@ async function checkAlerts(currentPrice) {
 
     if (db.settings.telegramToken && db.settings.telegramChatId) {
       sendTelegramMessage(db.settings.telegramToken, db.settings.telegramChatId, msg)
-        .catch(err => console.error('Telegram send error:', err.message));
+        .then(() => addLog('telegram', `Telegram sent: alert ${alert.id}`, { chatId: db.settings.telegramChatId }))
+        .catch(err => {
+          addLog('error', `Telegram send failed: ${err.message}`, { alertId: alert.id });
+          console.error('Telegram send error:', err.message);
+        });
     }
   }
 
@@ -145,9 +165,13 @@ let priceTimer = null;
 async function refreshPrice() {
   try {
     priceCache = await fetchGoldPrice();
+    addLog('price', `XAU/USD: $${priceCache.price.toFixed(3)} (${priceCache.change >= 0 ? '+' : ''}${priceCache.change.toFixed(3)})`, {
+      price: priceCache.price, change: priceCache.change, source: priceCache.source
+    });
     console.log(`[${new Date().toLocaleTimeString()}] XAU/USD: $${priceCache.price}`);
     await checkAlerts(priceCache.price);
   } catch (err) {
+    addLog('error', `Price fetch failed: ${err.message}`);
     console.error('Price fetch error:', err.message);
     priceCache.source = 'Error - retrying...';
   }
@@ -160,13 +184,86 @@ function startPriceLoop() {
   priceTimer = setInterval(refreshPrice, intervalMs);
 }
 
-// --- API Routes ---
+// --- Admin Auth Middleware ---
+function adminAuth(req, res, next) {
+  const token = req.headers['x-admin-token'] || req.query.token;
+  if (token !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// ============================================================
+// ADMIN ROUTES
+// ============================================================
+
+app.get('/admin', (_req, res) => {
+  res.sendFile(join(__dirname, 'public', 'admin.html'));
+});
+
+app.post('/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password !== ADMIN_PASSWORD) {
+    addLog('system', `Admin login failed (wrong password)`);
+    return res.status(401).json({ success: false, error: 'รหัสผ่านไม่ถูกต้อง' });
+  }
+  addLog('system', 'Admin logged in');
+  res.json({ success: true, token: ADMIN_PASSWORD });
+});
+
+// GET logs (with optional filter ?type=price|alert|error|push|telegram|system&limit=100)
+app.get('/admin/api/logs', adminAuth, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
+  const type = req.query.type;
+  const filtered = type ? logs.filter(l => l.type === type) : logs;
+  res.json(filtered.slice(0, limit));
+});
+
+// GET stats
+app.get('/admin/api/stats', adminAuth, (_req, res) => {
+  const db = readDB();
+  res.json({
+    uptime: Math.floor(process.uptime()),
+    currentPrice: priceCache,
+    activeAlerts: db.alerts.filter(a => a.active).length,
+    totalAlerts: db.alerts.length,
+    historyCount: (db.history || []).length,
+    logCount: logs.length,
+    alertsEnabled: db.settings.alertsEnabled,
+    telegramConfigured: !!(db.settings.telegramToken && db.settings.telegramChatId)
+  });
+});
+
+// SSE — real-time log stream
+app.get('/admin/api/stream', adminAuth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  sseClients.add(res);
+
+  // send last 50 logs immediately on connect
+  res.write(`data: ${JSON.stringify({ type: '__init__', logs: logs.slice(0, 50) })}\n\n`);
+
+  req.on('close', () => sseClients.delete(res));
+});
+
+// Clear logs
+app.post('/admin/api/logs/clear', adminAuth, (_req, res) => {
+  logs.length = 0;
+  addLog('system', 'Logs cleared by admin');
+  res.json({ success: true });
+});
+
+// ============================================================
+// PUBLIC API ROUTES
+// ============================================================
 
 app.get('/api/price', (_req, res) => {
   res.json(priceCache);
 });
 
-// รับราคาจากบอทภายนอก: POST /api/price/push { price, high?, low?, source? }
 app.post('/api/price/push', async (req, res) => {
   const { price, high, low, source } = req.body;
   const parsed = parseFloat(price);
@@ -186,6 +283,7 @@ app.post('/api/price/push', async (req, res) => {
     source: source || 'External Bot'
   };
 
+  addLog('push', `Push received: $${parsed} from "${priceCache.source}"`, { price: parsed, source: priceCache.source });
   console.log(`[PUSH ${new Date().toLocaleTimeString()}] XAU/USD: $${parsed} (from: ${priceCache.source})`);
   await checkAlerts(parsed);
 
@@ -201,7 +299,8 @@ app.post('/api/settings', (req, res) => {
     const db = readDB();
     db.settings = { ...db.settings, ...req.body };
     writeDB(db);
-    startPriceLoop(); // restart loop if checkInterval changed
+    addLog('system', 'Settings updated', req.body);
+    startPriceLoop();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -221,8 +320,10 @@ app.post('/api/test-telegram', async (req, res) => {
       telegramToken, telegramChatId,
       `✅ <b>ทดสอบการเชื่อมต่อสำเร็จ!</b>\n\nXAU/USD ราคาปัจจุบัน: <b>${priceStr}</b>\nเวลา: ${new Date().toLocaleString('th-TH')}`
     );
+    addLog('telegram', `Test message sent to ${telegramChatId}`);
     res.json({ success: true });
   } catch (err) {
+    addLog('error', `Test telegram failed: ${err.message}`);
     res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -248,6 +349,7 @@ app.post('/api/alerts', (req, res) => {
     };
     db.alerts.push(alert);
     writeDB(db);
+    addLog('system', `Alert created: ${condition} $${alert.targetPrice}`, { alertId: alert.id });
     res.json({ success: true, alert });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -263,6 +365,7 @@ app.delete('/api/alerts/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Alert not found' });
     }
     writeDB(db);
+    addLog('system', `Alert deleted: ${req.params.id}`);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -278,6 +381,7 @@ app.post('/api/history/clear', (_req, res) => {
     const db = readDB();
     db.history = [];
     writeDB(db);
+    addLog('system', 'Alert history cleared');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -285,9 +389,13 @@ app.post('/api/history/clear', (_req, res) => {
 });
 
 // --- Start ---
+addLog('system', `Server starting on port ${PORT}`);
 refreshPrice().then(() => {
   startPriceLoop();
   app.listen(PORT, () => {
-    console.log(`\n🚀 Gold Monitor running at http://localhost:${PORT}\n`);
+    console.log(`\n🚀 Gold Monitor running at http://localhost:${PORT}`);
+    console.log(`🔐 Admin panel: http://localhost:${PORT}/admin`);
+    console.log(`🔑 Admin password: ${ADMIN_PASSWORD}\n`);
+    addLog('system', `Server started on port ${PORT}`);
   });
 });
