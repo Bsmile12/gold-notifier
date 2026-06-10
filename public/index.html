@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XAU/USD Gold Price Monitor & Telegram Notifier</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- FontAwesome for Premium Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Custom Styling -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glass-bg"></div>
+  <div class="glow-sphere sphere-1"></div>
+  <div class="glow-sphere sphere-2"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <i class="fa-solid fa-coins gold-icon pulse"></i>
+        <div>
+          <h1>XAU/USD Gold Monitor</h1>
+          <p class="subtitle">ระบบเฝ้าระวังและแจ้งเตือนราคาทองคำผ่าน Telegram</p>
+        </div>
+      </div>
+      
+      <!-- Live Price Ticker in Header -->
+      <div class="header-ticker glass-panel">
+        <span class="ticker-label">XAU/USD Live Price</span>
+        <div class="price-container">
+          <span class="price-symbol">$</span>
+          <span id="live-gold-price" class="price-value">0.00</span>
+          <span id="price-change-percent" class="price-badge">0.00%</span>
+        </div>
+        <div class="source-info">
+          <span id="price-source">Connecting...</span>
+          <span class="pulse-dot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="dashboard-grid">
+      
+      <!-- Left Column: Chart and Stats -->
+      <section class="dashboard-col left-col">
+        <!-- Live Chart Panel -->
+        <div class="glass-panel chart-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-chart-line header-icon"></i>กราฟราคาทองคำเรียลไทม์</h2>
+            <div class="tradingview-badge">XAUUSD Spot</div>
+          </div>
+          <div class="chart-container">
+            <!-- TradingView Widget -->
+            <div class="tradingview-widget-container" style="height:100%;width:100%">
+              <div id="tradingview_gold" style="height:100%;width:100%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Price stats row -->
+        <div class="stats-row">
+          <div class="glass-panel stat-card">
+            <div class="stat-icon-wrapper high-icon">
+              <i class="fa-solid fa-arrow-trend-up"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">Daily High</span>
+              <span id="stat-high" class="stat-value">$0.00</span>
+            </div>
+          </div>
+
+          <div class="glass-panel stat-card">
+            <div class="stat-icon-wrapper low-icon">
+              <i class="fa-solid fa-arrow-trend-down"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">Daily Low</span>
+              <span id="stat-low" class="stat-value">$0.00</span>
+            </div>
+          </div>
+
+          <div class="glass-panel stat-card">
+            <div class="stat-icon-wrapper update-icon">
+              <i class="fa-solid fa-arrows-rotate"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">Last Updated</span>
+              <span id="stat-time" class="stat-value">00:00:00</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Settings & Alerts -->
+      <section class="dashboard-col right-col">
+        
+        <!-- Telegram Configurations -->
+        <div class="glass-panel settings-panel">
+          <div class="panel-header">
+            <h2><i class="fa-brands fa-telegram header-icon telegram-blue"></i>ตั้งค่า Telegram Notifications</h2>
+            <label class="switch">
+              <input type="checkbox" id="alerts-enabled-toggle" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+          
+          <div class="panel-body">
+            <form id="settings-form">
+              <div class="form-group">
+                <label for="telegram-token">Bot Token <span class="required">*</span></label>
+                <div class="input-wrapper">
+                  <i class="fa-solid fa-key input-icon"></i>
+                  <input type="password" id="telegram-token" placeholder="ป้อน Telegram Bot Token ของคุณ..." required>
+                  <button type="button" id="toggle-token-visibility" class="visibility-btn">
+                    <i class="fa-solid fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-2">
+                  <label for="telegram-chatid">Chat ID <span class="required">*</span></label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-user input-icon"></i>
+                    <input type="text" id="telegram-chatid" placeholder="ป้อน Telegram Chat ID ของคุณ..." required>
+                  </div>
+                </div>
+
+                <div class="form-group flex-1">
+                  <label for="check-interval">ความถี่ (วินาที)</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-clock input-icon"></i>
+                    <input type="number" id="check-interval" min="5" max="3600" value="30">
+                  </div>
+                </div>
+              </div>
+
+              <div class="btn-group">
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i>บันทึกการตั้งค่า</button>
+                <button type="button" id="test-telegram-btn" class="btn btn-secondary"><i class="fa-solid fa-paper-plane"></i>ทดสอบส่งข้อความ</button>
+              </div>
+            </form>
+            <div id="settings-status-message" class="status-msg"></div>
+          </div>
+        </div>
+
+        <!-- Add Alert Rule -->
+        <div class="glass-panel add-alert-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-bell header-icon gold-glow"></i>สร้างเงื่อนไขแจ้งเตือนราคา</h2>
+          </div>
+          <div class="panel-body">
+            <form id="alert-form" class="inline-form">
+              <div class="form-group select-group">
+                <label for="alert-condition">เงื่อนไข</label>
+                <div class="input-wrapper">
+                  <i class="fa-solid fa-circle-question input-icon"></i>
+                  <select id="alert-condition">
+                    <option value="above">ราคาสูงกว่าหรือเท่ากับ (>=)</option>
+                    <option value="below">ราคาต่ำกว่าหรือเท่ากับ (<=)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group price-group">
+                <label for="alert-price">ราคาทองคำเป้าหมาย ($)</label>
+                <div class="input-wrapper">
+                  <i class="fa-solid fa-dollar-sign input-icon"></i>
+                  <input type="number" step="0.01" id="alert-price" placeholder="เช่น 2425.50" required>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-success alert-submit-btn"><i class="fa-solid fa-plus"></i>เพิ่มการแจ้งเตือน</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Active Alerts List -->
+        <div class="glass-panel list-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-list-check header-icon"></i>รายการแจ้งเตือนที่ตั้งไว้ (<span id="alert-count">0</span>)</h2>
+          </div>
+          <div class="panel-body scroll-panel">
+            <div id="alerts-list" class="alerts-list">
+              <!-- Dynamically populated -->
+              <div class="empty-state">
+                <i class="fa-solid fa-circle-info"></i>
+                <p>ยังไม่มีรายการแจ้งเตือนที่สร้างไว้</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Triggered Alert History -->
+        <div class="glass-panel list-panel history-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-history header-icon"></i>ประวัติการแจ้งเตือนล่าสุด</h2>
+            <button id="clear-history-btn" class="btn-text"><i class="fa-solid fa-trash-can"></i> ล้างประวัติ</button>
+          </div>
+          <div class="panel-body scroll-panel">
+            <div id="history-list" class="history-list">
+              <!-- Dynamically populated -->
+              <div class="empty-state">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <p>ยังไม่มีประวัติการส่งแจ้งเตือน</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>&copy; 2026 XAU/USD Gold Trading Monitor Bot. Built with premium design.</p>
+    </footer>
+  </div>
+
+  <!-- TradingView Library -->
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <!-- Main Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>

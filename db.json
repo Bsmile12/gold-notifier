@@ -1,0 +1,129 @@
+{
+  "settings": {
+    "telegramToken": "8877695865:AAFTLUlmGBPv42tAUY1JKvu-DaNn61-Q2RM",
+    "telegramChatId": "-1003938913739",
+    "alertsEnabled": true,
+    "checkInterval": 5
+  },
+  "alerts": [
+    {
+      "id": "alert_1780601935687_6eorukxoz",
+      "targetPrice": 4478.37,
+      "condition": "above",
+      "createdAt": "2026-06-04T19:38:55.687Z",
+      "triggeredAt": "2026-06-04T19:53:03.772Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780602352547_e85vj9f0f",
+      "targetPrice": 4476.9,
+      "condition": "below",
+      "createdAt": "2026-06-04T19:45:52.547Z",
+      "triggeredAt": "2026-06-04T19:45:54.037Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780602380725_v9vm1ngyf",
+      "targetPrice": 4475.9,
+      "condition": "below",
+      "createdAt": "2026-06-04T19:46:20.725Z",
+      "triggeredAt": "2026-06-04T19:46:24.071Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780602439370_dllpi4wm2",
+      "targetPrice": 4476,
+      "condition": "below",
+      "createdAt": "2026-06-04T19:47:19.370Z",
+      "triggeredAt": "2026-06-04T19:47:24.129Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780602837659_fspnazkrh",
+      "targetPrice": 4479,
+      "condition": "above",
+      "createdAt": "2026-06-04T19:53:57.659Z",
+      "triggeredAt": "2026-06-04T19:54:02.514Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780603738263_vjdnn2opa",
+      "targetPrice": 4478.9,
+      "condition": "below",
+      "createdAt": "2026-06-04T20:08:58.263Z",
+      "triggeredAt": "2026-06-04T20:11:20.100Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780604814929_sg8nj6t1j",
+      "targetPrice": 4480,
+      "condition": "above",
+      "createdAt": "2026-06-04T20:26:54.929Z",
+      "triggeredAt": "2026-06-04T22:28:27.623Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780604818863_bxascjmp9",
+      "targetPrice": 4476,
+      "condition": "below",
+      "createdAt": "2026-06-04T20:26:58.863Z",
+      "triggeredAt": "2026-06-04T20:30:50.990Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780605464381_c1owhxsmi",
+      "targetPrice": 4474.9,
+      "condition": "below",
+      "createdAt": "2026-06-04T20:37:44.381Z",
+      "triggeredAt": "2026-06-04T20:45:23.090Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780605583632_rcj588fwl",
+      "targetPrice": 4477,
+      "condition": "above",
+      "createdAt": "2026-06-04T20:39:43.632Z",
+      "triggeredAt": "2026-06-04T20:41:31.445Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780633718918_o2d52w134",
+      "targetPrice": 4424,
+      "condition": "below",
+      "createdAt": "2026-06-05T04:28:38.918Z",
+      "triggeredAt": "2026-06-10T16:07:45.230Z",
+      "active": false
+    },
+    {
+      "id": "alert_1780633744224_x11yksbpw",
+      "targetPrice": 4455,
+      "condition": "above",
+      "createdAt": "2026-06-05T04:29:04.224Z",
+      "triggeredAt": null,
+      "active": true
+    }
+  ],
+  "history": [
+    {
+      "id": "alert_1780633718918_o2d52w134",
+      "targetPrice": 4424,
+      "condition": "below",
+      "triggeredPrice": 4129.175,
+      "triggeredAt": "2026-06-10T16:07:45.230Z"
+    },
+    {
+      "id": "alert_1780604814929_sg8nj6t1j",
+      "targetPrice": 4480,
+      "condition": "above",
+      "triggeredPrice": 4480.013,
+      "triggeredAt": "2026-06-04T22:28:27.623Z"
+    },
+    {
+      "id": "alert_1780605464381_c1owhxsmi",
+      "targetPrice": 4474.9,
+      "condition": "below",
+      "triggeredPrice": 4474.78,
+      "triggeredAt": "2026-06-04T20:45:23.090Z"
+    }
+  ]
+}
