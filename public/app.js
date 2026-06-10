@@ -37,7 +37,7 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchHistory();
 
   // Start polling price and data
-  setInterval(fetchPrice, 10000); // Poll price every 10 seconds
+  setInterval(fetchPrice, 5000); // Poll price every 5 seconds
   setInterval(fetchAlerts, 10000); // Sync active alerts state
   setInterval(fetchHistory, 10000); // Sync history
 
@@ -51,7 +51,7 @@ function initTradingView() {
       "width": "100%",
       "height": "100%",
       "symbol": "TVC:GOLD",
-      "interval": "15",
+      "interval": "1",
       "timezone": "Asia/Bangkok",
       "theme": "dark",
       "style": "1",
