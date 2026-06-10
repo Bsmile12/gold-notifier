@@ -265,12 +265,17 @@ app.get('/api/price', (_req, res) => {
 });
 
 app.post('/api/price/push', async (req, res) => {
-  const { price, high, low, source } = req.body;
-  const parsed = parseFloat(price);
+  // รองรับทั้ง price และ alert_price
+  const rawPrice = req.body.price ?? req.body.alert_price;
+  const { high, low, source, direction } = req.body;
+  const parsed = parseFloat(rawPrice);
 
   if (!parsed || parsed <= 0) {
-    return res.status(400).json({ success: false, error: 'ต้องการ price ที่เป็นตัวเลขบวก' });
+    return res.status(400).json({ success: false, error: 'ต้องการ price หรือ alert_price ที่เป็นตัวเลขบวก' });
   }
+
+  // normalize direction: up/down/uptrend/downtrend/above/below → "up" | "down" | null
+  const dir = normalizeDirection(direction);
 
   const prev = priceCache.price || parsed;
   priceCache = {
@@ -280,15 +285,28 @@ app.post('/api/price/push', async (req, res) => {
     high: parseFloat(high) || Math.max(priceCache.high || parsed, parsed),
     low:  parseFloat(low)  || Math.min(priceCache.low  || parsed, parsed),
     timestamp: new Date().toISOString(),
-    source: source || 'External Bot'
+    source: source || 'External Bot',
+    direction: dir
   };
 
-  addLog('push', `Push received: $${parsed} from "${priceCache.source}"`, { price: parsed, source: priceCache.source });
-  console.log(`[PUSH ${new Date().toLocaleTimeString()}] XAU/USD: $${parsed} (from: ${priceCache.source})`);
+  const dirLabel = dir === 'up' ? '⬆ ขึ้น' : dir === 'down' ? '⬇ ลง' : '';
+  addLog('push',
+    `Push: $${parsed} ${dirLabel} from "${priceCache.source}"`,
+    { price: parsed, direction: dir, source: priceCache.source }
+  );
+  console.log(`[PUSH ${new Date().toLocaleTimeString()}] $${parsed} ${dirLabel} (${priceCache.source})`);
   await checkAlerts(parsed);
 
-  res.json({ success: true, price: parsed });
+  res.json({ success: true, price: parsed, direction: dir });
 });
+
+function normalizeDirection(val) {
+  if (!val) return null;
+  const v = String(val).toLowerCase().trim();
+  if (['up', 'above', 'uptrend', 'long', 'bull', 'bullish', 'buy', '1'].includes(v)) return 'up';
+  if (['down', 'below', 'downtrend', 'short', 'bear', 'bearish', 'sell', '-1'].includes(v)) return 'down';
+  return null;
+}
 
 app.get('/api/settings', (_req, res) => {
   res.json(readDB().settings);
