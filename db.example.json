@@ -1,0 +1,10 @@
+{
+  "settings": {
+    "telegramToken": "",
+    "telegramChatId": "",
+    "alertsEnabled": true,
+    "checkInterval": 5
+  },
+  "alerts": [],
+  "history": []
+}
