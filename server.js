@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -9,6 +9,8 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_PATH = join(DATA_DIR, 'db.json');
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+// [2026-06-12 Security patch] secret สำหรับ endpoint ฝั่ง "เขียน" — ต้องตรงกับ TELEGRAM_ALERT_SECRET ฝั่งบอท Mila
+const API_SECRET = process.env.API_SECRET || '';
 
 const app = express();
 app.use(cors());
@@ -16,7 +18,18 @@ app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
 // --- DB Helpers ---
+// [2026-06-12] db.json ถูกถอดออกจาก git แล้ว (มี secret) — ไม่มีไฟล์ = สร้าง default ให้เอง
+// ตั้งค่า Telegram token/chat id ภายหลังผ่านหน้าเว็บหรือ POST /api/settings
+const DB_DEFAULTS = {
+  settings: { telegramToken: '', telegramChatId: '', alertsEnabled: true, checkInterval: 5 },
+  alerts: [],
+  history: []
+};
 function readDB() {
+  if (!existsSync(DB_PATH)) {
+    writeFileSync(DB_PATH, JSON.stringify(DB_DEFAULTS, null, 2));
+    return JSON.parse(JSON.stringify(DB_DEFAULTS));
+  }
   return JSON.parse(readFileSync(DB_PATH, 'utf-8'));
 }
 function writeDB(data) {
@@ -184,6 +197,20 @@ function startPriceLoop() {
   priceTimer = setInterval(refreshPrice, intervalMs);
 }
 
+// --- [2026-06-12 Security patch] Write-API Auth Middleware ---
+// ล็อก endpoint ฝั่ง "เขียน" (ตั้ง alert / แก้ settings / push ราคา / ล้างประวัติ) จากบุคคลที่สาม
+// ผ่านได้ 2 ทาง: Authorization: Bearer <API_SECRET> (บอท Mila) หรือ admin token (หน้าเว็บ/แอดมิน)
+// ไม่ตั้ง API_SECRET = โหมดเดิม (เปิดหมด) เพื่อไม่ให้ deploy พังก่อนตั้ง env บน Railway — มี warning ตอนสตาร์ท
+function apiAuth(req, res, next) {
+  if (!API_SECRET) return next();
+  const auth = req.headers['authorization'] || '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  const adminToken = req.headers['x-admin-token'] || req.query.token;
+  if (bearer === API_SECRET || adminToken === ADMIN_PASSWORD) return next();
+  addLog('error', `Unauthorized write blocked: ${req.method} ${req.path}`, { ip: req.ip });
+  return res.status(401).json({ success: false, error: 'Unauthorized' });
+}
+
 // --- Admin Auth Middleware ---
 function adminAuth(req, res, next) {
   const token = req.headers['x-admin-token'] || req.query.token;
@@ -264,7 +291,7 @@ app.get('/api/price', (_req, res) => {
   res.json(priceCache);
 });
 
-app.post('/api/price/push', async (req, res) => {
+app.post('/api/price/push', apiAuth, async (req, res) => {
   // รองรับทั้ง price และ alert_price
   const rawPrice = req.body.price ?? req.body.alert_price;
   const { high, low, source, direction } = req.body;
@@ -323,7 +350,7 @@ app.get('/admin/api/settings', adminAuth, (_req, res) => {
   res.json(readDB().settings);
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', apiAuth, (req, res) => {
   try {
     const db = readDB();
     const updates = { ...req.body };
@@ -341,8 +368,12 @@ app.post('/api/settings', (req, res) => {
   }
 });
 
-app.post('/api/test-telegram', async (req, res) => {
-  const { telegramToken, telegramChatId } = req.body;
+app.post('/api/test-telegram', apiAuth, async (req, res) => {
+  let { telegramToken, telegramChatId } = req.body;
+  // ถ้า frontend ส่ง masked token มา ให้ใช้ token จริงจาก DB
+  if (telegramToken && telegramToken.startsWith('••••••••')) {
+    telegramToken = readDB().settings.telegramToken;
+  }
   if (!telegramToken || !telegramChatId) {
     return res.status(400).json({ success: false, error: 'Missing token or chat ID' });
   }
@@ -366,7 +397,7 @@ app.get('/api/alerts', (_req, res) => {
   res.json(readDB().alerts || []);
 });
 
-app.post('/api/alerts', (req, res) => {
+app.post('/api/alerts', apiAuth, (req, res) => {
   try {
     const { targetPrice, condition } = req.body;
     if (!targetPrice || !condition) {
@@ -390,7 +421,7 @@ app.post('/api/alerts', (req, res) => {
   }
 });
 
-app.delete('/api/alerts/:id', (req, res) => {
+app.delete('/api/alerts/:id', apiAuth, (req, res) => {
   try {
     const db = readDB();
     const before = db.alerts.length;
@@ -410,7 +441,7 @@ app.get('/api/history', (_req, res) => {
   res.json(readDB().history || []);
 });
 
-app.post('/api/history/clear', (_req, res) => {
+app.post('/api/history/clear', apiAuth, (_req, res) => {
   try {
     const db = readDB();
     db.history = [];
@@ -424,6 +455,10 @@ app.post('/api/history/clear', (_req, res) => {
 
 // --- Start ---
 addLog('system', `Server starting on port ${PORT}`);
+if (!API_SECRET) {
+  console.warn('⚠️  API_SECRET not set — write endpoints (alerts/settings/push) are UNPROTECTED');
+  addLog('system', '⚠️ API_SECRET ไม่ถูกตั้ง — endpoint ฝั่งเขียนเปิดรับทุกคน (ตั้ง env API_SECRET เพื่อล็อก)');
+}
 refreshPrice().then(() => {
   startPriceLoop();
   app.listen(PORT, () => {

@@ -2,6 +2,27 @@
 let currentPrice = 0;
 let tradingViewWidget = null;
 
+// --- [2026-06-12 Security patch] เรียก endpoint ฝั่ง "เขียน" พร้อม Bearer secret ---
+// เซิร์ฟเวอร์ล็อก endpoint เขียนด้วย env API_SECRET — หน้าเว็บเก็บ secret ใน localStorage ('apiSecret')
+// ครั้งแรกที่โดน 401 จะถามผู้ใช้แล้วจำไว้ (แก้ค่า: localStorage.removeItem('apiSecret') ใน console)
+async function apiFetch(url, options = {}) {
+  const doFetch = () => {
+    const secret = localStorage.getItem('apiSecret') || '';
+    const headers = { ...(options.headers || {}) };
+    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+    return fetch(url, { ...options, headers });
+  };
+  let response = await doFetch();
+  if (response.status === 401) {
+    const entered = prompt('เซิร์ฟเวอร์ต้องการ API Secret (ค่าเดียวกับ env API_SECRET):');
+    if (entered && entered.trim()) {
+      localStorage.setItem('apiSecret', entered.trim());
+      response = await doFetch();
+    }
+  }
+  return response;
+}
+
 // DOM Elements
 const livePriceEl = document.getElementById('live-gold-price');
 const priceChangePercentEl = document.getElementById('price-change-percent');
@@ -93,7 +114,7 @@ function setupEventListeners() {
     };
 
     try {
-      const response = await fetch('/api/settings', {
+      const response = await apiFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -122,7 +143,7 @@ function setupEventListeners() {
     showStatusMessage('กำลังส่งข้อความทดสอบไปยัง Telegram...', 'info');
 
     try {
-      const response = await fetch('/api/test-telegram', {
+      const response = await apiFetch('/api/test-telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telegramToken: token, telegramChatId: chatId })
@@ -143,7 +164,7 @@ function setupEventListeners() {
   alertsEnabledToggle.addEventListener('change', async () => {
     const enabled = alertsEnabledToggle.checked;
     try {
-      await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alertsEnabled: enabled })
@@ -165,7 +186,7 @@ function setupEventListeners() {
     }
 
     try {
-      const response = await fetch('/api/alerts', {
+      const response = await apiFetch('/api/alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetPrice, condition })
@@ -186,7 +207,7 @@ function setupEventListeners() {
   clearHistoryBtn.addEventListener('click', async () => {
     if (!confirm('คุณต้องการล้างประวัติการแจ้งเตือนทั้งหมดใช่หรือไม่?')) return;
     try {
-      const response = await fetch('/api/history/clear', { method: 'POST' });
+      const response = await apiFetch('/api/history/clear', { method: 'POST' });
       const result = await response.json();
       if (result.success) {
         fetchHistory();
@@ -309,7 +330,7 @@ function renderAlerts(alerts) {
       const id = e.currentTarget.getAttribute('data-id');
       if (confirm('คุณต้องการลบกฎการแจ้งเตือนนี้ใช่หรือไม่?')) {
         try {
-          await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
+          await apiFetch(`/api/alerts/${id}`, { method: 'DELETE' });
           fetchAlerts();
         } catch (err) {
           console.error('Failed to delete alert:', err);
